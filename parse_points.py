@@ -79,8 +79,19 @@ def get_point(df, quad, lad, si, point):
         )
     return match.iloc[0][['X', 'Y', 'Z']]
 
+def compute_2D_distance_between(df, quad1, lad1, si1, point1, quad2, lad2, si2, point2, coordinate):
+    p1 = get_point(df, quad1, lad1, si1, point1)
+    p2 = get_point(df, quad2, lad2, si2, point2)
+    if coordinate == 'X':
+        dist = abs(p2['X'] - p1['X'])
+    elif coordinate == 'Y':
+        dist = abs(p2['Y'] - p1['Y'])
+    else:
+        raise Exception(f"Invalid coordinate {coordinate}")
+    
+    return dist
 
-def compute_distance_between(df, quad1, lad1, si1, point1, quad2, lad2, si2, point2):
+def compute_3D_distance_between(df, quad1, lad1, si1, point1, quad2, lad2, si2, point2):
     p1 = get_point(df, quad1, lad1, si1, point1)
     p2 = get_point(df, quad2, lad2, si2, point2)
     dist = ((p2['X'] - p1['X'])**2 + (p2['Y'] - p1['Y'])**2 + (p2['Z'] - p1['Z'])**2) ** 0.5
@@ -114,7 +125,7 @@ if __name__ == '__main__':
             for lad in range(0, 2):
                 for si in range(0, 2):
                     try:
-                        dist = compute_distance_between(df, quad, lad, si, 0, quad, lad, si, 1)
+                        dist = compute_3D_distance_between(df, quad, lad, si, 0, quad, lad, si, 1)
                         f.write(f'{quad},{lad},{si},{dist}, {dist - NOMINAL_INSILICON_DISTANCE}\n')
                         insilicon_df_rows.append({
                             'QUADDER': quad,
@@ -135,7 +146,7 @@ if __name__ == '__main__':
             for lad in range(0, 2):
                 for si in range(0, 2):
                     try:
-                        dist = compute_distance_between(df, quad, lad, si, 1, quad, lad, si, 2)
+                        dist = compute_3D_distance_between(df, quad, lad, si, 1, quad, lad, si, 2)
                         f.write(f'{quad},{lad},{si},{dist}, {dist - NOMINAL_INSILICON_DISTANCE}\n')
                         insilicon_df_rows.append({
                             'QUADDER': quad,
@@ -156,7 +167,7 @@ if __name__ == '__main__':
             for lad in range(0, 2):
                 for si in range(0, 2):
                     try:
-                        dist = compute_distance_between(df, quad, lad, si, 2, quad, lad, si, 3)
+                        dist = compute_3D_distance_between(df, quad, lad, si, 2, quad, lad, si, 3)
                         f.write(f'{quad},{lad},{si},{dist}, {dist - NOMINAL_INSILICON_DISTANCE}\n')
                         insilicon_df_rows.append({
                             'QUADDER': quad,
@@ -177,7 +188,7 @@ if __name__ == '__main__':
             for lad in range(0, 2):
                 for si in range(0, 2):
                     try:
-                        dist = compute_distance_between(df, quad, lad, si, 0, quad, lad, si, 3)
+                        dist = compute_3D_distance_between(df, quad, lad, si, 0, quad, lad, si, 3)
                         f.write(f'{quad},{lad},{si},{dist}, {dist - NOMINAL_INSILICON_DISTANCE}\n')
                         insilicon_df_rows.append({
                             'QUADDER': quad,
@@ -205,7 +216,7 @@ if __name__ == '__main__':
         for quad in range(1, 9):
                 for si in range(0, 2):
                     try:
-                        dist = compute_distance_between(df, quad, 0, si, 3, quad, 1, si, 0)
+                        dist = compute_2D_distance_between(df, quad, 0, si, 3, quad, 1, si, 0, 'X')
                         dist -= 0.5 # Account for distance of silicon crosses wrt the edge
                         f.write(f'{quad},0,1,{si},3-0,{dist}\n')
                         intersilicon_df_rows.append({
@@ -227,7 +238,7 @@ if __name__ == '__main__':
         for quad in range(1, 9):
                 for si in range(0, 2):
                     try:
-                        dist = compute_distance_between(df, quad, 0, si, 2, quad, 1, si, 1)
+                        dist = compute_2D_distance_between(df, quad, 0, si, 2, quad, 1, si, 1, 'X')
                         dist -= 0.5 # Account for distance of silicon crosses wrt the edge
                         f.write(f'{quad},{lad},{si},{dist}\n')
                         intersilicon_df_rows.append({
@@ -249,7 +260,7 @@ if __name__ == '__main__':
         for quad in range(1, 9):
                 for lad in range(0, 2):
                     try:
-                        dist = compute_distance_between(df, quad, lad, 0, 1, quad, lad, 1, 0)
+                        dist = compute_2D_distance_between(df, quad, lad, 0, 1, quad, lad, 1, 0, 'Y')
                         dist -= 0.5 # Account for distance of silicon crosses wrt the edge
                         f.write(f'{quad},{lad},{si},{dist}\n')
                         intersilicon_df_rows.append({
@@ -271,7 +282,7 @@ if __name__ == '__main__':
         for quad in range(1, 9):
                 for lad in range(0, 2):
                     try:
-                        dist = compute_distance_between(df, quad, lad, 0, 2, quad, lad, 1, 3)
+                        dist = compute_2D_distance_between(df, quad, lad, 0, 2, quad, lad, 1, 3, 'Y')
                         dist -= 0.5 # Account for distance of silicon crosses wrt the edge
                         f.write(f'{quad},{lad},{si},{dist}\n')
                         intersilicon_df_rows.append({
@@ -300,7 +311,7 @@ if __name__ == '__main__':
         for quad in range(1, 9):
                 for hef in range(0, 2):
                     try:
-                        dist = compute_distance_between(df, quad, hef, -1, 0, quad, hef, 0, 0)
+                        dist = compute_3D_distance_between(df, quad, hef, -1, 0, quad, hef, 0, 0)
                         dist -= 55.6 # Account for distance of point from HEF border
                         f.write(f'{quad},{hef},{si},{dist}\n')
                         hef_to_si_df_rows.append({
@@ -319,7 +330,7 @@ if __name__ == '__main__':
         for quad in range(1, 9):
                 for hef in range(0, 2):
                     try:
-                        dist = compute_distance_between(df, quad, hef, -1, 1, quad, hef, 0, 3)
+                        dist = compute_3D_distance_between(df, quad, hef, -1, 1, quad, hef, 0, 3)
                         dist -= 55.6 # Account for distance of point from HEF border
                         f.write(f'{quad},{hef},{si},{dist}\n')
                         hef_to_si_df_rows.append({
