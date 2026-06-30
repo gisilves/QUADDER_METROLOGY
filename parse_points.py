@@ -3,6 +3,7 @@ import sys
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
+import os
 
 sns.set_style("whitegrid")  # Set the plot style
 sns.set_palette("Set1")     # Set the color palette    
@@ -13,6 +14,8 @@ NAME_RE = re.compile(r'quad(\d+)_lad(\d+)_si(\d+)_(\d+)')
 X_RE = re.compile(r'X=\s*([-\d.]+)')
 Y_RE = re.compile(r'Y=\s*([-\d.]+)')
 Z_RE = re.compile(r'Z=\s*([-\d.]+)')
+
+NAME_HEF_RE = re.compile(r'quad(\d+)_hef(\d+)_(\d+)')
 
 def parse_file(path):
     with open(path, 'r') as f:
@@ -32,6 +35,7 @@ def parse_file(path):
             # next line: name + Y=
             if i + 1 < n:
                 name_match = NAME_RE.search(lines[i+1])
+                hef_match = NAME_HEF_RE.search(lines[i+1])
                 y_match = Y_RE.search(lines[i+1])
             # next next line: (n) + Z=
             if i + 2 < n:
@@ -43,6 +47,17 @@ def parse_file(path):
                     'QUADDER': int(quad),
                     'LADDER': int(lad),
                     'SI': int(si),
+                    'POINT': int(point),
+                    'X': float(x_match.group(1)),
+                    'Y': float(y_match.group(1)),
+                    'Z': float(z_match.group(1)),
+                })
+            elif x_match and hef_match and y_match and z_match:
+                quad, hef, point = hef_match.groups()
+                rows.append({
+                    'QUADDER': int(quad),
+                    'LADDER': int(hef),
+                    'SI': -1, # Hef points are artificially assigned to silicon -1
                     'POINT': int(point),
                     'X': float(x_match.group(1)),
                     'Y': float(y_match.group(1)),
@@ -77,6 +92,11 @@ if __name__ == '__main__':
         sys.exit(1)
 
     infiles = sys.argv[1:]
+    # Check that all files exist
+    for f in infiles:
+        if not os.path.exists(f):
+            print(f"File {f} does not exist")
+            sys.exit(1)
     df = pd.concat([parse_file(f) for f in infiles], ignore_index=True)
 
     outfile = 'points_parsed.csv'
@@ -271,6 +291,52 @@ if __name__ == '__main__':
     intersilicon_df.to_csv('intersilicon_distances.csv', index=False)
     
     
+    hef_to_si_df_rows = []
+    
+    # Compute distances between points 0(1) of each hef and points 0(3) of silicon 0 in the same ladder
+    dist_outfile = 'hef_to_si_distances_00.csv'
+    with open(dist_outfile, 'w') as f:
+        f.write('QUADDER,LADDER,HEF,POINT PAIR,DISTANCE\n')
+        for quad in range(1, 9):
+                for hef in range(0, 2):
+                    try:
+                        dist = compute_distance_between(df, quad, hef, -1, 0, quad, hef, 0, 0)
+                        dist -= 55.6 # Account for distance of point from HEF border
+                        f.write(f'{quad},{hef},{si},{dist}\n')
+                        hef_to_si_df_rows.append({
+                            'QUADDER': quad,
+                            'LADDER': hef,
+                            'HEF': hef,
+                            'POINT PAIR': '0-0',
+                            'DISTANCE': dist,
+                        })
+                    except:
+                        pass
+                    
+    dist_outfile = 'hef_to_si_distances_13.csv'
+    with open(dist_outfile, 'w') as f:
+        f.write('QUADDER,LADDER,HEF,POINT PAIR,DISTANCE\n')
+        for quad in range(1, 9):
+                for hef in range(0, 2):
+                    try:
+                        dist = compute_distance_between(df, quad, hef, -1, 1, quad, hef, 0, 3)
+                        dist -= 55.6 # Account for distance of point from HEF border
+                        f.write(f'{quad},{hef},{si},{dist}\n')
+                        hef_to_si_df_rows.append({
+                            'QUADDER': quad,
+                            'LADDER': hef,
+                            'HEF': hef,
+                            'POINT PAIR': '1-3',
+                            'DISTANCE': dist,
+                        })
+                    except: 
+                        pass
+                    
+    hef_to_si_df = pd.DataFrame(hef_to_si_df_rows, columns=['QUADDER', 'LADDER', 'HEF', 'POINT PAIR', 'DISTANCE'])
+    print(hef_to_si_df)
+    hef_to_si_df.to_csv('hef_to_si_distances.csv', index=False)
+    
+    
     # Histogram of the distances of insilicon points
     plt.figure(figsize=(16/2, 9/2))
     sns.histplot(data=insilicon_df['DISTANCE'], bins=50, kde=False, color='blue')
@@ -297,7 +363,8 @@ if __name__ == '__main__':
 
     # Histogram of the distance of intersilicon points (3-0 and 2-1)
     plt.figure(figsize=(16/2, 9/2))
-    sns.histplot(data=intersilicon_df[(intersilicon_df['POINT PAIR'] == '3-0') | (intersilicon_df['POINT PAIR'] == '2-1')]['DISTANCE'], bins=50, kde=False, color='blue')
+    filtered_df = intersilicon_df[(intersilicon_df['POINT PAIR'] == '3-0') | (intersilicon_df['POINT PAIR'] == '2-1')]
+    sns.histplot(data=filtered_df['DISTANCE'], bins=50, kde=False, color='blue')
     plt.xlabel('Distance (mm)')
     plt.ylabel('Entries')
     plt.title('Intersilicon Distances (between ladders)')
@@ -309,11 +376,11 @@ if __name__ == '__main__':
     plt.tight_layout()
 
     # Add stats text to the plot
-    stats_str = (f"Entries: {len(intersilicon_df)}\n"
-                 f"Mean: {intersilicon_df["DISTANCE"].mean():.3f}\n"
-                 f"Median: {intersilicon_df["DISTANCE"].median():.3f}\n"
-                 f"Min: {intersilicon_df["DISTANCE"].min():.3f}\n" 
-                 f"Max: {intersilicon_df["DISTANCE"].max():.3f}" 
+    stats_str = (f"Entries: {len(filtered_df)}\n"
+                 f"Mean: {filtered_df["DISTANCE"].mean():.3f}\n"
+                 f"Median: {filtered_df["DISTANCE"].median():.3f}\n"
+                 f"Min: {filtered_df["DISTANCE"].min():.3f}\n"
+                 f"Max: {filtered_df["DISTANCE"].max():.3f}"
                  )
     
     plt.text(0.05, 0.95, stats_str, transform=plt.gca().transAxes, fontsize=10, verticalalignment='top', bbox=dict(facecolor='white', alpha=0.5))
@@ -321,7 +388,8 @@ if __name__ == '__main__':
     
     # Histogram of the distance of intersilicon points (1-0 and 2-3)
     plt.figure(figsize=(16/2, 9/2))
-    sns.histplot(data=intersilicon_df[(intersilicon_df['POINT PAIR'] == '1-0') | (intersilicon_df['POINT PAIR'] == '2-3')]['DISTANCE'], bins=50, kde=False, color='blue')
+    filtered_df = intersilicon_df[(intersilicon_df['POINT PAIR'] == '1-0') | (intersilicon_df['POINT PAIR'] == '2-3')]
+    sns.histplot(data=filtered_df['DISTANCE'], bins=50, kde=False, color='blue')
     plt.xlabel('Distance (mm)')
     plt.ylabel('Entries')
     plt.title('Intersilicon Distances (between silicons of the same ladder)')
@@ -333,13 +401,36 @@ if __name__ == '__main__':
     plt.tight_layout()
 
     # Add stats text to the plot
-    stats_str = (f"Entries: {len(intersilicon_df)}\n"
-                 f"Mean: {intersilicon_df["DISTANCE"].mean():.3f}\n"
-                 f"Median: {intersilicon_df["DISTANCE"].median():.3f}\n"
-                 f"Min: {intersilicon_df["DISTANCE"].min():.3f}\n" 
-                 f"Max: {intersilicon_df["DISTANCE"].max():.3f}" 
+    stats_str = (f"Entries: {len(filtered_df)}\n"
+                 f"Mean: {filtered_df["DISTANCE"].mean():.3f}\n"
+                 f"Median: {filtered_df["DISTANCE"].median():.3f}\n"
+                 f"Min: {filtered_df["DISTANCE"].min():.3f}\n"
+                 f"Max: {filtered_df["DISTANCE"].max():.3f}"    
                  )
     
     plt.text(0.05, 0.95, stats_str, transform=plt.gca().transAxes, fontsize=10, verticalalignment='top', bbox=dict(facecolor='white', alpha=0.5))
     plt.show()
     
+    # Histogram of the distance of hef to silicon points (0-0 and 1-3)
+    plt.figure(figsize=(16/2, 9/2))
+    sns.histplot(data=hef_to_si_df[(hef_to_si_df['POINT PAIR'] == '0-0') | (hef_to_si_df['POINT PAIR'] == '1-3')]['DISTANCE'], bins=50, kde=False, color='blue')
+    plt.xlabel('Distance (mm)')
+    plt.ylabel('Entries')
+    plt.title('Hef to Silicon Distances (between silicons of the same ladder)')
+    plt.minorticks_on()
+    plt.ticklabel_format(axis='x', useOffset=False, style='plain')
+    plt.grid(which='major', linestyle='-', linewidth='0.2', color='black')
+    plt.grid(which='minor', linestyle=':', linewidth='0.2', color='black')
+    plt.grid(True)
+    plt.tight_layout()
+
+    # Add stats text to the plot
+    stats_str = (f"Entries: {len(hef_to_si_df)}\n"
+                 f"Mean: {hef_to_si_df["DISTANCE"].mean():.3f}\n"
+                 f"Median: {hef_to_si_df["DISTANCE"].median():.3f}\n"
+                 f"Min: {hef_to_si_df["DISTANCE"].min():.3f}\n" 
+                 f"Max: {hef_to_si_df["DISTANCE"].max():.3f}" 
+                 )
+    
+    plt.text(0.05, 0.95, stats_str, transform=plt.gca().transAxes, fontsize=10, verticalalignment='top', bbox=dict(facecolor='white', alpha=0.5))
+    plt.show()
